@@ -1,58 +1,70 @@
 ﻿using System.Net;
+using System.Text.Json;
 using FluentValidation;
-using FluentValidation.Results;
 using Microsoft.AspNetCore.Http;
+using Serilog;
 
 namespace Core.Extensions
 {
     public class ExceptionMiddleware
     {
-        private RequestDelegate _next;
+        private readonly RequestDelegate _next;
 
         public ExceptionMiddleware(RequestDelegate next)
         {
             _next = next;
         }
 
-        public async Task InvokeAsync(HttpContext httpContext)
+        public async Task InvokeAsync(HttpContext context)
         {
             try
             {
-                await _next(httpContext);
+                await _next(context);
             }
-            catch (Exception e)
+            catch (Exception ex)
             {
-                await HandleExceptionAsync(httpContext, e);
+                await HandleExceptionAsync(context, ex);
             }
         }
 
-        private Task HandleExceptionAsync(HttpContext httpContext, Exception e)
+        private Task HandleExceptionAsync(HttpContext context, Exception ex)
         {
-            httpContext.Response.ContentType = "application/json";
-            httpContext.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+            context.Response.ContentType = "application/json";
+            int statusCode = (int)HttpStatusCode.InternalServerError;
+            object responseObj;
 
-            string message = "Internal Server Error";
-            IEnumerable<ValidationFailure> errors;
-            if (e.GetType() == typeof(ValidationException))
+            if (ex is ValidationException validationException)
             {
-                message = e.Message;
-                errors = ((ValidationException)e).Errors;
-                httpContext.Response.StatusCode = 400;
-
-                return httpContext.Response.WriteAsync(new ValidationErrorDetails
+                statusCode = 400;
+                responseObj = new
                 {
-                    StatusCode = 400,
-                    Message = message,
-                    Errors = errors
-                }.ToString());
-
+                    StatusCode = statusCode,
+                    Message = validationException.Message,
+                    Errors = validationException.Errors.Select(f => new
+                    {
+                        f.PropertyName,
+                        f.ErrorMessage
+                    })
+                };
+            }
+            else
+            {
+                responseObj = new
+                {
+                    StatusCode = statusCode,
+                    Message = "Internal Server Error",
+                    Detail = ex.Message
+                };
             }
 
-            return httpContext.Response.WriteAsync(new ErrorDetails
-            {
-                StatusCode = httpContext.Response.StatusCode,
-                Message = message
-            }.ToString());
+            context.Response.StatusCode = statusCode;
+
+            // 🔥 Serilog loglama
+            Log.Error(ex, "ExceptionMiddleware caught an exception: {@Response}", responseObj);
+
+            var json = JsonSerializer.Serialize(responseObj);
+            return context.Response.WriteAsync(json);
         }
+
     }
 }
