@@ -8,6 +8,8 @@ namespace Core.Utilities.Results.Concrete
 {
     public class SuccessDataResult<T> : DataResult<T>
     {
+        private string drugListed;
+
         public SuccessDataResult(T data, bool success, string message) : base(data, success, message)
         {
         }
@@ -19,7 +21,12 @@ namespace Core.Utilities.Results.Concrete
         {
 
         }
-        public SuccessDataResult():base(default,true)
+        public SuccessDataResult() : base(default, true)
+        {
+
+        }
+
+        public SuccessDataResult(T data, string message): base(data, true, message)
         {
             
         }
